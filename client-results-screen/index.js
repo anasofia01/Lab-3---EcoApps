@@ -1,62 +1,30 @@
-document.getElementById('fetch-button').addEventListener('click', fetchData);
+const socket = io('http://localhost:5050', {
+	path: '/real-time',
+});
 
-async function fetchData() {
-	renderLoadingState();
-	try {
-		const response = await fetch('http://localhost:5050/users');
-		if (!response.ok) {
-			throw new Error('Network response was not ok');
-		}
-		const data = await response.json();
-		renderData(data);
-	} catch (error) {
-		console.error(error);
-		renderErrorState();
-	}
-}
+const startButton = document.getElementById('start-countdown');
+const playersInfo = document.getElementById('players-info');
+const winnerInfo = document.getElementById('winner-info');
+playersInfo.innerHTML = 'Esperando a que el juego comience...';
+startButton.addEventListener('click', () => {
+	socket.emit('start-countdown');
+	winnerInfo.innerHTML = '';
+	playersInfo.innerHTML = 'El juego ha comenzado. Esperando a que los jugadores elijan sus opciones...';
+});
 
-function renderErrorState() {
-	const container = document.getElementById('data-container');
-	container.innerHTML = ''; // Clear previous data
-	container.innerHTML = '<p>Failed to load data</p>';
-	console.log('Failed to load data');
-}
-
-function renderLoadingState() {
-	const container = document.getElementById('data-container');
-	container.innerHTML = ''; // Clear previous data
-	container.innerHTML = '<p>Loading...</p>';
-	console.log('Loading...');
-}
-
-function renderData(data) {
-	const container = document.getElementById('data-container');
-	container.innerHTML = ''; // Clear previous data
-
-	if (data.players.length > 0) {
-		container.style.display = 'block';
-		data.players.forEach((item) => {
-			const div = document.createElement('div');
-			div.className = 'player-item';
-			const img = item.position === 1 ? "<img src='resources/corona.png' class='crown' alt='corona' />" : '';
-			div.innerHTML = `
-				<img src="${item.profilePicture}" class="profile-pic" alt="${item.name}" />
-				<div>
-					<p><b>${item.name}</b> choice <b>${item.choice}</b> ${img} (position: ${item.position})</p>
-				</div>
-			`;
-			container.appendChild(div);
-			if (data.result) {
-				const resultDiv = document.createElement('div');
-				resultDiv.className = 'result';
-				resultDiv.innerHTML = `
-					<p>${data.result}</p>
-				`;
-				container.appendChild(resultDiv);
-			}
-		});
+socket.on('winner', (data) => {
+	let player1 = data.players[0] ? data.players[0].name : '?';
+	let player2 = data.players[1] ? data.players[1].name : '?';
+	let choice1 = data.players[0] ? data.players[0].choice : '?';
+	let choice2 = data.players[1] ? data.players[1].choice : '?';
+	let winner = data.winner ? data.winner : 'Empate';
+	playersInfo.innerHTML = `
+	Nombre del Jugador 1: ${player1} (${choice1})<br>
+	Nombre del Jugador 2: ${player2} (${choice2})<br>
+	`;
+	if (winner === 'Empate') {
+		winnerInfo.innerHTML = `El juego ha terminado en empate`;
 	} else {
-		container.style.display = 'block';
-		container.innerHTML = '<p>No data available</p>';
+		winnerInfo.innerHTML = `El ganador es: ${winner}`;
 	}
-}
+});

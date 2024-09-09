@@ -1,46 +1,85 @@
 const express = require('express');
 const cors = require('cors');
+const { createServer } = require('http');
+const { Server } = require('socket.io');
 
 const app = express();
-app.use(express.json()); // utility to process JSON in requests
-app.use(cors()); // utility to allow clients to make requests from other hosts or ips
+app.use(express.json());
+app.use(cors());
 
 const db = {
 	players: [],
 };
 
-app.get('/users', (request, response) => {
-	response.send(db);
-	db.players = [];
+const httpServer = createServer(app);
+
+httpServer.listen(5050, () => {
+	console.log(`Server is running on http://localhost:${5050}`);
 });
 
-app.post('/user', (request, response) => {
-	const { body } = request;
-	if (!body.choice) {
-		response.status(400).send({ error: 'You must choose rock, paper or scissors' });
-		return;
-	}
-	db.players.push(body);
-	if (db.players.length === 2) {
-		const result = determineWinner(db.players[0], db.players[1]);
-		db.players = playersPositions(db.players, result);
-		console.log(db);
-		return response.status(200).send({ players: db.players });
-	} else {
-		response.status(201).send({ players: db.players });
-	}
+const io = new Server(httpServer, {
+	path: '/real-time',
+	cors: {
+		origin: '*',
+	},
 });
 
-function playersPositions(players, result) {
-	return players.map((player) => {
-		if (result.winner && player.name === result.winner.name) {
-			return { ...player, position: 1 }; //Este es el ganador
+let gameStarted = false;
+
+io.on('connection', (socket) => {
+	console.log('User connected');
+
+	socket.on('join-game', (player) => {
+		if (!gameStarted) {
+			socket.emit('waiting-to-start', 'Esperando a iniciar el juego...');
+		} else if (db.players.length < 2) {
+			db.players.push({ ...player, id: socket.id });
+			socket.emit('waiting', 'Esperando a otro jugador...');
+
+			if (db.players.length === 2) {
+				io.emit('start-game', 'Game starting now!');
+			}
+		} else {
+			socket.emit('full', 'Game is already in progress. Please wait.');
 		}
-		if (result.loser && player.name === result.loser.name) {
-			return { ...player, position: 2 }; //Este es el perdedor
-		}
-		return { ...player, position: 'Draw' }; //Empate
 	});
+
+	socket.on('start-countdown', () => {
+		if (!gameStarted) {
+			gameStarted = true;
+			io.emit('game-started', 'El juego ha comenzado! Puedes unirte ahora.');
+		}
+	});
+
+	socket.on('play', (data) => {
+		const playerIndex = db.players.findIndex((p) => p.id === socket.id);
+		if (playerIndex !== -1) {
+			db.players[playerIndex].choice = data.choice;
+		}
+
+		if (db.players.length === 2 && db.players[0].choice && db.players[1].choice) {
+			const result = determineWinner(db.players[0], db.players[1]);
+			io.emit('winner', {
+				winner: result.winner ? result.winner.name : 'Empate',
+				players: db.players,
+			});
+			resetGame();
+		}
+	});
+
+	socket.on('disconnect', () => {
+		db.players = db.players.filter((player) => player.id !== socket.id);
+		if (db.players.length < 2) {
+			io.emit('reset', 'Un jugador se ha desconectado. Reiniciando el juego.');
+			resetGame();
+		}
+	});
+});
+
+function resetGame() {
+	db.players = [];
+	gameStarted = false;
+	io.emit('reset', 'El juego ha sido reiniciado. Puedes jugar de nuevo.');
 }
 
 function determineWinner(player1, player2) {
@@ -49,15 +88,12 @@ function determineWinner(player1, player2) {
 		paper: { beats: 'rock' },
 		scissors: { beats: 'paper' },
 	};
+
 	if (player1.choice === player2.choice) {
-		return { result: 'Draw', players: [player1, player2] };
+		return { result: 'Draw', winner: null };
 	} else if (moves[player1.choice].beats === player2.choice) {
-		return { result: `${player1.name}`, winner: player1, loser: player2 };
+		return { result: `${player1.name} wins`, winner: player1 };
 	} else {
-		return { result: `${player2.name}`, winner: player2, loser: player1 };
+		return { result: `${player2.name} wins`, winner: player2 };
 	}
 }
-
-app.listen(5050, () => {
-	console.log(`Server is running on http://localhost:${5050}`);
-});

@@ -1,96 +1,55 @@
-document.getElementById('user-form').addEventListener('submit', createUser);
+const socket = io('http://localhost:5050', {
+	path: '/real-time',
+});
 
-let timer;
-let timeLeft = 10;
+const form = document.getElementById('user-form');
+const dataContainer = document.getElementById('data-container');
 
-const countDownElement = document.createElement('p');
-countDownElement.id = 'countdown-timer';
+let playerName = '';
+let playerChoice = '';
 
-document.getElementById('data-container').appendChild(countDownElement);
+form.style.display = 'none';
 
-function startTimer() {
-	updateCountDown();
-	timer = setInterval(() => {
-		timeLeft--;
-		updateCountDown();
-		if (timeLeft <= 0) {
-			clearInterval(timer);
-			autoSubmitForm();
-		}
-	}, 1000);
-}
+dataContainer.innerHTML = 'Waiting for the game to start';
+socket.on('waiting-to-start', (message) => {
+	dataContainer.innerHTML = message;
+});
 
-function updateCountDown() {
-	countDownElement.textContent = `Time left: ${timeLeft} seconds`;
-}
+socket.on('game-started', () => {
+	form.style.display = 'block';
+	dataContainer.innerHTML = 'The game has started, please enter your details';
+});
 
-function autoSubmitForm() {
-	document.getElementById('user-form').submit();
-}
-
-async function createUser(event) {
+form.addEventListener('submit', (event) => {
 	event.preventDefault();
-	clearInterval(timer);
-	renderLoadingState();
-	const nameUser = document.getElementById('name').value;
-	const choiceElement = document.querySelector('input[name="choice"]:checked');
-	try {
-		const player = {
-			name: nameUser,
-			profilePicture: 'https://avatar.iran.liara.run/public/13', // if you want to generate random images for user profile go to this link: https://avatar-placeholder.iran.liara.run/
-			choice: choiceElement ? choiceElement.value : null,
-		};
-		const response = await fetch('http://localhost:5050/user', {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json', // Specify the content type as JSON
-			},
-			body: JSON.stringify(player), // Convert the data to a JSON string
-		});
-		if (!response.ok) {
-			throw new Error('Network response was not ok');
-		}
-		const data = await response.json();
-		renderData(data);
-		clearForm();
-		setTimeout(() => {
-			const container = document.getElementById('data-container');
-			timeLeft = 10;
-			container.innerHTML = '';
-			container.appendChild(countDownElement);
-			startTimer();
-			console.log('si funciona');
-		}, 5000);
-	} catch (error) {
-		renderErrorState();
+	playerName = document.getElementById('name').value;
+	playerChoice = document.querySelector('input[name = "choice"]:checked').value;
+	socket.emit('join-game', { name: playerName, choice: playerChoice });
+	dataContainer.innerHTML = 'Waiting for another player';
+});
+
+socket.on('start-game', () => {
+	dataContainer.innerHTML = 'The game has begun, waiting for the results';
+	socket.emit('play', { name: playerName, choice: playerChoice });
+});
+
+socket.on('winner', (data) => {
+	const winnerName = data.winner;
+	if (winnerName === 'Empate') {
+		alert('Es un empate');
+	} else {
+		alert(`The winner is: ${winnerName}`);
 	}
-}
+	setTimeout(() => {
+		dataContainer.innerHTML = 'Waiting for the game to start';
+		form.style.display = 'none';
+		form.reset();
+		playerName = '';
+		playerChoice = '';
+	}, 5000);
+});
 
-function clearForm() {
-	document.getElementById('user-form').reset();
-}
-
-function renderErrorState() {
-	const container = document.getElementById('data-container');
-	container.innerHTML = ''; // Clear previous data
-	container.innerHTML = '<p>Failed to load data</p>';
-	console.log('Failed to load data');
-}
-
-function renderLoadingState() {
-	const container = document.getElementById('data-container');
-	container.innerHTML = ''; // Clear previous data
-	container.innerHTML = '<p>Loading...</p>';
-	console.log('Loading...');
-}
-
-function renderData(data) {
-	const container = document.getElementById('data-container');
-	container.innerHTML = ''; // Clear previous data
-	const div = document.createElement('div');
-	div.className = 'item';
-	div.innerHTML = 'The movement was sent';
-	container.appendChild(div);
-}
-
-startTimer();
+socket.on('reset', (message) => {
+	dataContainer.innerHTML = message;
+	form.style.display = 'none';
+});
